@@ -129,7 +129,17 @@ failed:
   - response body: JSON with error + time
 */
 func (h *HTTPHandlers) HandleGetAllTasks(w http.ResponseWriter, r *http.Request) {
+	tasks := h.todoList.ListTasks()
+	b, err := json.MarshalIndent(tasks, "", "    ")
+	if err != nil {
+		panic(err)
+	}
 
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(b); err != nil {
+		fmt.Println("failed to write http response:", err)
+		return
+	}
 }
 
 /*
@@ -146,7 +156,17 @@ failed:
   - response body: JSON with error + time
 */
 func (h *HTTPHandlers) HandleGetAllUncompletedTasks(w http.ResponseWriter, r *http.Request) {
+	uncompletedTasks := h.todoList.ListUncompletedTasks()
+	b, err := json.MarshalIndent(uncompletedTasks, "", "    ")
+	if err != nil {
+		panic(err)
+	}
 
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(b); err != nil {
+		fmt.Println("failed to write http response:", err)
+		return
+	}
 }
 
 /*
@@ -163,7 +183,47 @@ failed:
   - response body: JSON with error + time
 */
 func (h *HTTPHandlers) HandleCompleteTask(w http.ResponseWriter, r *http.Request) {
+	var completeDTO CompleteTaskDTO
+	if err := json.NewDecoder(r.Body).Decode(&completeDTO); err != nil {
+		errDTO := NewErrorDTO(err)
+		http.Error(w, errDTO.ToString(), http.StatusBadRequest)
+		return
+	}
 
+	title := mux.Vars(r)["title"]
+
+	var (
+		changedTask todo.Task
+		err         error
+	)
+
+	if completeDTO.Complete {
+		changedTask, err = h.todoList.CompleteTask(title)
+	} else {
+		changedTask, err = h.todoList.UncompleteTask(title)
+	}
+
+	if err != nil {
+		errDTO := NewErrorDTO(err)
+
+		if errors.Is(err, todo.ErrTaskNotFound) {
+			http.Error(w, errDTO.ToString(), http.StatusNotFound)
+		} else {
+			http.Error(w, errDTO.ToString(), http.StatusInternalServerError)
+		}
+
+		return
+	}
+
+	b, err := json.MarshalIndent(changedTask, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+
+	if _, err := w.Write(b); err != nil {
+		fmt.Println("failed to write http response:", err)
+		return
+	}
 }
 
 /*
@@ -180,5 +240,19 @@ failed:
   - response body: JSON with error + time
 */
 func (h *HTTPHandlers) HandleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	title := mux.Vars(r)["title"]
 
+	if err := h.todoList.DeleteTask(title); err != nil {
+		errDTO := NewErrorDTO(err)
+
+		if errors.Is(err, todo.ErrTaskNotFound) {
+			http.Error(w, errDTO.ToString(), http.StatusNotFound)
+		} else {
+			http.Error(w, errDTO.ToString(), http.StatusInternalServerError)
+		}
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
